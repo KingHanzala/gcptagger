@@ -7,6 +7,97 @@ package com.example.gcptagging;
 public class GcpResourceNames {
     
     /**
+     * Main method to allow running the class from the command line.
+     * Usage: java ... GcpResourceNames <method> <args...>
+     * Example: java ... GcpResourceNames formatVmInstanceName my-project us-central1-a my-vm
+     *
+     * @param args Command line arguments
+     */
+    public static void main(String[] args) {
+        if (args.length < 1) {
+            System.out.println("Usage: java ... GcpResourceNames <method> <args...>");
+            System.out.println("Available methods:");
+            System.out.println("  formatVmInstanceName <projectId> <zone> <instanceName>");
+            System.out.println("  formatDiskName <projectId> <zone> <diskName>");
+            System.out.println("  formatProjectName <projectId>");
+            System.out.println("  formatStorageBucketName <bucketName>");
+            System.out.println("  formatBigQueryDatasetName <projectId> <datasetId>");
+            System.out.println("  formatBigQueryTableName <projectId> <datasetId> <tableId>");
+            System.out.println("  formatTagBindingName <resourceName> <tagValueName>");
+            System.exit(1);
+        }
+
+        String method = args[0];
+        try {
+            switch (method) {
+                case "formatVmInstanceName":
+                    if (args.length < 4) {
+                        System.out.println("Error: formatVmInstanceName requires projectId, zone, and instanceName");
+                        System.exit(1);
+                    }
+                    System.out.println(formatVmInstanceName(args[1], args[2], args[3]));
+                    break;
+                    
+                case "formatDiskName":
+                    if (args.length < 4) {
+                        System.out.println("Error: formatDiskName requires projectId, zone, and diskName");
+                        System.exit(1);
+                    }
+                    System.out.println(formatDiskName(args[1], args[2], args[3]));
+                    break;
+                    
+                case "formatProjectName":
+                    if (args.length < 2) {
+                        System.out.println("Error: formatProjectName requires projectId");
+                        System.exit(1);
+                    }
+                    System.out.println(formatProjectName(args[1]));
+                    break;
+                    
+                case "formatStorageBucketName":
+                    if (args.length < 2) {
+                        System.out.println("Error: formatStorageBucketName requires bucketName");
+                        System.exit(1);
+                    }
+                    System.out.println(formatStorageBucketName(args[1]));
+                    break;
+                    
+                case "formatBigQueryDatasetName":
+                    if (args.length < 3) {
+                        System.out.println("Error: formatBigQueryDatasetName requires projectId and datasetId");
+                        System.exit(1);
+                    }
+                    System.out.println(formatBigQueryDatasetName(args[1], args[2]));
+                    break;
+                    
+                case "formatBigQueryTableName":
+                    if (args.length < 4) {
+                        System.out.println("Error: formatBigQueryTableName requires projectId, datasetId, and tableId");
+                        System.exit(1);
+                    }
+                    System.out.println(formatBigQueryTableName(args[1], args[2], args[3]));
+                    break;
+                    
+                case "formatTagBindingName":
+                    if (args.length < 3) {
+                        System.out.println("Error: formatTagBindingName requires resourceName and tagValueName");
+                        System.exit(1);
+                    }
+                    System.out.println(formatTagBindingName(args[1], args[2]));
+                    break;
+                    
+                default:
+                    System.out.println("Error: Unknown method " + method);
+                    System.exit(1);
+            }
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
+        }
+    }
+    
+    /**
      * Formats a VM instance resource name in the format required by the Resource Manager API.
      *
      * @param projectId The GCP project ID

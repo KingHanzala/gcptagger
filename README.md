@@ -43,8 +43,20 @@ This will create a JAR file in the `target` directory and copy all dependencies 
 
 ### Command Line Interface
 
+There are two ways to run the application:
+
+#### Option 1: Using the JAR with the Classpath
+
 ```
 java -jar target/gcptagging-1.0-SNAPSHOT.jar <command> <args>
+```
+
+**Note:** This requires that the `lib` directory with all dependencies exists in the same directory as the JAR file.
+
+#### Option 2: Using the Classpath Directly (ZSH Compatible)
+
+```
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main <command> <args>
 ```
 
 ### Available Commands
@@ -108,6 +120,14 @@ The tool supports various resource name formats for different GCP resource types
 - BigQuery Table: `//bigquery.googleapis.com/projects/{PROJECT_ID}/datasets/{DATASET_ID}/tables/{TABLE_ID}`
 - Project: `//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}`
 
+### Helper Utilities
+
+The tool also includes helper classes that can be used to format resource names:
+
+```
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.GcpResourceNames formatVmInstanceName my-project us-central1-a my-vm
+```
+
 ## Testing
 
 A test script (`test-tagging.sh`) is provided to help you verify the functionality of the tool. You can edit the script to use your actual GCP resource information.
@@ -131,12 +151,34 @@ If you encounter permission errors, ensure your service account has the necessar
 
 - `roles/resourcemanager.tagUser` (includes all required permissions)
 
-### Shell Wildcard Expansion (ZSH Users)
+### JAR File Not Found
 
-If you're using ZSH and encountering wildcard expansion issues with the classpath, use quotes around the classpath:
+If you see an error like `Error: Unable to access jarfile target/gcptagging-1.0-SNAPSHOT.jar`, make sure you've built the project with Maven first:
+
+```
+mvn clean package
+```
+
+### Missing Dependencies
+
+If you see class loading errors, make sure the `lib` directory with all dependencies exists in the same directory as the JAR file. Alternatively, you can run the application using the classpath directly:
 
 ```
 java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main <command> <args>
+```
+
+### Running from a Different Directory
+
+If you need to run the tool from a different directory, use absolute paths:
+
+```
+java -jar /path/to/gcptagging/target/gcptagging-1.0-SNAPSHOT.jar <command> <args>
+```
+
+Or with the classpath:
+
+```
+java -cp "/path/to/gcptagging/target/gcptagging-1.0-SNAPSHOT.jar:/path/to/gcptagging/target/lib/*" com.example.gcptagging.Main <command> <args>
 ```
 
 ## License
