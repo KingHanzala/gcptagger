@@ -1,57 +1,50 @@
 #!/bin/bash
-# Simple test script to verify the GCP tagging tool functionality
+# This script tests the GCP Resource Tagging functionality with actual GCP API calls.
+# Make sure to set the appropriate values for your GCP environment below.
 
 # Check if Java is installed
 if ! command -v java &> /dev/null; then
-    echo "Error: Java is not installed or not in PATH"
+    echo "Java is not installed. Please install Java and try again."
     exit 1
 fi
 
-echo "===== GCP Resource Tagging Tool Test ====="
-echo ""
-
-# Test variables
+# Replace these values with your actual GCP resources
 PROJECT_ID="my-project"
 ZONE="us-central1-a"
 INSTANCE_NAME="my-vm"
-TAG_VALUE="tagValues/123456789"
+TAG_VALUE="tagValues/123456789"  # Replace with your actual tag value ID
 
-# Test resource name formatting
-echo "Testing resource name formatting..."
+# Format the resource name for a VM instance
 RESOURCE_NAME=$(java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.GcpResourceNames formatVmInstanceName $PROJECT_ID $ZONE $INSTANCE_NAME)
-echo "Formatted VM resource name: $RESOURCE_NAME"
+
+# Display information
+echo "==== GCP Resource Tagging Test ===="
+echo "Project ID: $PROJECT_ID"
+echo "Resource: $RESOURCE_NAME"
+echo ""
+echo "Make sure your service-account.json file has the necessary permissions"
+echo "for the Cloud Resource Manager API and is in the current directory."
 echo ""
 
-# Display project info
-echo "Project Information:"
-echo "  Project ID: $PROJECT_ID"
-echo "  Zone: $ZONE"
-echo "  VM Instance: $INSTANCE_NAME"
-echo "  Tag Value: $TAG_VALUE"
+# Test creating a tag binding
+echo "Creating tag binding..."
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main create service-account.json "$RESOURCE_NAME" "$TAG_VALUE"
 echo ""
 
-echo "NOTE: This is a demo script. In a real environment, you should replace service-account.json with your actual service account credentials file."
+# Test listing tag bindings for the resource
+echo "Listing tag bindings for resource..."
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main list-resource service-account.json "$RESOURCE_NAME"
 echo ""
 
-# Test create tag binding
-echo "Testing 'create' command..."
-java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main create service-account.json $RESOURCE_NAME $TAG_VALUE
+# Test listing tag bindings for the tag value
+echo "Listing tag bindings for tag value..."
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main list-tag service-account.json "$TAG_VALUE"
 echo ""
 
-# Test list tag bindings for resource
-echo "Testing 'list-resource' command..."
-java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main list-resource service-account.json $RESOURCE_NAME
-echo ""
+# Format the tag binding name for deletion (would need the actual name from one of the list outputs)
+# This is commented out as the actual tag binding name needs to be retrieved from the list output
+# TAG_BINDING_NAME=$(java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.GcpResourceNames formatTagBindingName "$RESOURCE_NAME" "$TAG_VALUE")
+# echo "Deleting tag binding..."
+# java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main delete service-account.json "$TAG_BINDING_NAME"
 
-# Test list tag bindings for tag value
-echo "Testing 'list-tag' command..."
-java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main list-tag service-account.json $TAG_VALUE
-echo ""
-
-# Test delete tag binding
-echo "Testing 'delete' command..."
-java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main delete service-account.json "tagBindings/compute.googleapis.com@projects@my-project@zones@us-central1-a@instances@my-vm@tagValues@123456789"
-echo ""
-
-echo "All tests completed successfully!"
-echo "GCP Resource Tagging Tool is ready to use!" 
+echo "Test completed. Review the output above for results." 

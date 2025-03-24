@@ -1,127 +1,144 @@
 # GCP Resource Tagging Tool
 
-A Java-based command-line tool for tagging Google Cloud Platform (GCP) resources using the Cloud Resource Manager Tag Bindings API.
+A Java command-line tool for managing tags on Google Cloud Platform (GCP) resources.
+
+## Overview
+
+The GCP Resource Tagging Tool enables you to create, delete, and list tag bindings for your GCP resources through the Resource Manager API. Tags help you organize, manage, and filter your GCP resources at scale.
 
 ## Features
 
-- Create tag bindings for GCP resources
+- Create tag bindings between GCP resources and tag values
 - Delete existing tag bindings
-- List tag bindings for a specific resource
-- List tag bindings for a specific tag value
-- Utility methods for formatting resource names for various GCP services
+- List tag bindings for specific resources
+- List tag bindings associated with specific tag values
+- Support for various GCP resource types (VM instances, disks, buckets, etc.)
 
 ## Prerequisites
 
 - Java 11 or higher
-- Maven for building the project
-- A GCP service account with appropriate permissions:
-  - `roles/resourcemanager.tagUser` - For creating and managing tag bindings
+- Maven (for building)
+- A GCP service account with the following permissions:
+  - `resourcemanager.tagBindings.create`
+  - `resourcemanager.tagBindings.delete`
+  - `resourcemanager.tagBindings.list`
+- Service account key file (JSON format)
 
-## Setup
+## Building the Project
 
-1. **Clone the repository**
+1. Clone this repository:
+   ```
+   git clone https://github.com/yourusername/gcptagging.git
+   cd gcptagging
+   ```
 
-```bash
-git clone https://github.com/yourusername/gcptagging.git
-cd gcptagging
-```
+2. Build with Maven:
+   ```
+   mvn clean package
+   ```
 
-2. **Build the project**
-
-```bash
-mvn clean package
-```
-
-This will compile the code and create a JAR file in the `target` directory.
-
-3. **Create a service account and download credentials**
-
-- Go to the Google Cloud Console
-- Navigate to "IAM & Admin" > "Service Accounts"
-- Create a new service account with the required permissions
-- Create and download a JSON key file
-- Save the key file as `service-account.json` in the project directory
+This will create a JAR file in the `target` directory and copy all dependencies to `target/lib`.
 
 ## Usage
 
-The tool provides four main commands:
+### Command Line Interface
 
-### Create a tag binding
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar <command> <args>
+```
 
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar create service-account.json <resource-name> <tag-value>
+### Available Commands
+
+#### Create a Tag Binding
+
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar create <service-account-file> <resource-name> <tag-value>
 ```
 
 Example:
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar create service-account.json //compute.googleapis.com/projects/my-project/zones/us-central1-a/instances/my-vm tagValues/123456789
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar create service-account.json \
+    //compute.googleapis.com/projects/my-project/zones/us-central1-a/instances/my-vm \
+    tagValues/123456789
 ```
 
-### Delete a tag binding
+#### Delete a Tag Binding
 
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar delete service-account.json <tag-binding-name>
 ```
-
-Example:
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar delete service-account.json tagBindings/compute.googleapis.com@projects@my-project@zones@us-central1-a@instances@my-vm@tagValues@123456789
-```
-
-### List tag bindings for a resource
-
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar list-resource service-account.json <resource-name>
+java -jar target/gcptagging-1.0-SNAPSHOT.jar delete <service-account-file> <tag-binding-name>
 ```
 
 Example:
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar list-resource service-account.json //compute.googleapis.com/projects/my-project/zones/us-central1-a/instances/my-vm
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar delete service-account.json \
+    tagBindings/compute.googleapis.com@projects@my-project@zones@us-central1-a@instances@my-vm@tagValues@123456789
 ```
 
-### List tag bindings for a tag value
+#### List Tag Bindings for a Resource
 
-```bash
-java -jar target/gcptagging-1.0-SNAPSHOT.jar list-tag service-account.json <tag-value>
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar list-resource <service-account-file> <resource-name>
 ```
 
 Example:
-```bash
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar list-resource service-account.json \
+    //compute.googleapis.com/projects/my-project/zones/us-central1-a/instances/my-vm
+```
+
+#### List Tag Bindings for a Tag Value
+
+```
+java -jar target/gcptagging-1.0-SNAPSHOT.jar list-tag <service-account-file> <tag-value>
+```
+
+Example:
+```
 java -jar target/gcptagging-1.0-SNAPSHOT.jar list-tag service-account.json tagValues/123456789
 ```
 
-## Resource Name Formatting
+### Resource Name Formats
 
-The tool includes the `GcpResourceNames` class to help format resource names correctly:
+The tool supports various resource name formats for different GCP resource types. Some examples:
 
-```bash
-java -cp target/gcptagging-1.0-SNAPSHOT.jar:target/lib/* com.example.gcptagging.GcpResourceNames formatVmInstanceName my-project us-central1-a my-vm
-```
-
-Note: If you're using zsh (like on macOS), you need to quote the classpath with wildcards:
-
-```bash
-java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.GcpResourceNames formatVmInstanceName my-project us-central1-a my-vm
-```
+- VM Instance: `//compute.googleapis.com/projects/{PROJECT_ID}/zones/{ZONE}/instances/{INSTANCE_NAME}`
+- Disk: `//compute.googleapis.com/projects/{PROJECT_ID}/zones/{ZONE}/disks/{DISK_NAME}`
+- Storage Bucket: `//storage.googleapis.com/projects/_/buckets/{BUCKET_NAME}`
+- BigQuery Dataset: `//bigquery.googleapis.com/projects/{PROJECT_ID}/datasets/{DATASET_ID}`
+- BigQuery Table: `//bigquery.googleapis.com/projects/{PROJECT_ID}/datasets/{DATASET_ID}/tables/{TABLE_ID}`
+- Project: `//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}`
 
 ## Testing
 
-A test script is provided to verify the functionality:
+A test script (`test-tagging.sh`) is provided to help you verify the functionality of the tool. You can edit the script to use your actual GCP resource information.
 
-```bash
+```
+chmod +x test-tagging.sh
 ./test-tagging.sh
 ```
 
-## Resource Types Supported
+## Implementation Details
 
-The tool can tag any GCP resource that supports tags. Some common resource types and their formatting:
+- Built on the Google Cloud Resource Manager v3 API
+- Uses OAuth 2.0 for authentication via service account credentials
+- Handles asynchronous operations with timeouts for reliable tag management
 
-- VM Instances: `//compute.googleapis.com/projects/<project-id>/zones/<zone>/instances/<instance-name>`
-- GCS Buckets: `//storage.googleapis.com/<bucket-name>`
-- Cloud SQL Instances: `//sqladmin.googleapis.com/projects/<project-id>/instances/<instance-name>`
-- GKE Clusters: `//container.googleapis.com/projects/<project-id>/locations/<zone>/clusters/<cluster-name>`
-- BigQuery Datasets: `//bigquery.googleapis.com/projects/<project-id>/datasets/<dataset-name>`
+## Troubleshooting
+
+### Permission Errors
+
+If you encounter permission errors, ensure your service account has the necessary IAM roles:
+
+- `roles/resourcemanager.tagUser` (includes all required permissions)
+
+### Shell Wildcard Expansion (ZSH Users)
+
+If you're using ZSH and encountering wildcard expansion issues with the classpath, use quotes around the classpath:
+
+```
+java -cp "target/gcptagging-1.0-SNAPSHOT.jar:target/lib/*" com.example.gcptagging.Main <command> <args>
+```
 
 ## License
 
-MIT License # gcptagger
+This project is licensed under the MIT License - see the LICENSE file for details.
