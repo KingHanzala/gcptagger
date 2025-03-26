@@ -1,142 +1,337 @@
 package com.example.gcptagging;
 
-import com.google.api.gax.rpc.ApiException;
-import com.google.cloud.resourcemanager.v3.TagBinding;
-import com.google.cloud.resourcemanager.v3.TagBindingsClient;
-import com.google.cloud.resourcemanager.v3.CreateTagBindingRequest;
-import com.google.cloud.resourcemanager.v3.DeleteTagBindingRequest;
-import com.google.cloud.resourcemanager.v3.ListTagBindingsRequest;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
- * Implementation of GCP resource tagging operations.
+ * Implementation of GCP resource tagging operations using direct REST API calls.
  */
 public class GcpResourceTagger implements AutoCloseable {
     
-    private final TagBindingsClient tagBindingsClient;
+    private final HttpClient httpClient;
+    private static final String TAG_BINDINGS_API_URL = "https://cloudresourcemanager.googleapis.com/v3/";
     private static final int OPERATION_TIMEOUT_SECONDS = 60;
     
     /**
-     * Constructor initializes the TagBindingsClient.
+     * Constructor initializes with credentials.
      *
-     * @param tagBindingsClient Initialized TagBindingsClient
+     * @param credentials GoogleCredentials object for authorization
      */
-    public GcpResourceTagger(TagBindingsClient tagBindingsClient) {
-        this.tagBindingsClient = tagBindingsClient;
+    public GcpResourceTagger(GoogleCredentials credentials) {
+        this.httpClient = new HttpClient(credentials);
     }
     
     /**
-     * Creates a new tag binding between a resource and a tag value.
+     * Creates a tag binding between a resource and a tag value.
      *
-     * @param resourceName The full resource name (e.g., //compute.googleapis.com/projects/my-project/zones/us-central1-a/instances/my-vm)
-     * @param tagValueName The full tag value name (e.g., tagValues/123456789)
-     * @return The created TagBinding
-     * @throws ApiException If the API call fails
+     * @param resourceName The full resource name
+     * @param tagValue The tag value to bind to the resource
+     * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
+     * @return The created tag binding as a JsonObject
+     * @throws IOException If an I/O error occurs
      * @throws InterruptedException If the operation is interrupted
-     * @throws ExecutionException If the operation execution fails
-     * @throws TimeoutException If the operation times out
      */
-    public TagBinding createTagBinding(String resourceName, String tagValueName) 
-            throws ApiException, InterruptedException, ExecutionException, TimeoutException {
+    public JsonObject createTagBinding(String resourceName, String tagValue, String location) 
+            throws IOException, InterruptedException {
         
-        System.out.println("Creating tag binding for resource: " + resourceName + " with tag value: " + tagValueName);
+        System.out.println("Creating tag binding for resource: " + resourceName + " with tag value: " + tagValue);
         
-        // Build the TagBinding object
-        TagBinding tagBinding = TagBinding.newBuilder()
-                .setParent(resourceName)
-                .setTagValue(tagValueName)
-                .build();
+        // Resource path might need to be modified to conform to One Platform resource name format
+        String normalizedResourceName = resourceName;
+        if (normalizedResourceName.contains("/compute/v1/")) {
+            normalizedResourceName = normalizedResourceName.replace("/compute/v1", "");
+            
+            // Further normalize compute resources to follow One Platform format
+            // From: //compute.googleapis.com/projects/PROJECT_ID/zones/ZONE/instances/INSTANCE_NAME
+            // To:   //compute.googleapis.com/projects/PROJECT_ID/zones/ZONE/instances/INSTANCE_NAME
+            
+            // Make sure all segments are properly formatted
+            if (normalizedResourceName.contains("projects/") && normalizedResourceName.contains("zones/") && normalizedResourceName.contains("instances/")) {
+                // The format is already correct after removing the "/compute/v1" part
+                System.out.println("Using normalized resource name: " + normalizedResourceName);
+            }
+        }
         
-        // Create the request
-        CreateTagBindingRequest request = CreateTagBindingRequest.newBuilder()
-                .setTagBinding(tagBinding)
-                .build();
+        // For compute resources, we need to use the zone not the region
+        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
+        String apiLocation = location;
         
-        // Submit the request and wait for completion
-        return tagBindingsClient.createTagBindingAsync(request)
-                .get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // API URL depends on whether we're using a global or regional resource
+        String baseUrl;
+        if (apiLocation != null && !apiLocation.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + apiLocation);
+            // For regional resources
+            baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
+        } else {
+            // For global resources
+            baseUrl = TAG_BINDINGS_API_URL + "tagBindings";
+        }
+        
+        System.out.println("Using API endpoint: " + baseUrl);
+        
+        // Create the request body with the binding details
+        JsonObject requestBody = new JsonObject();
+        requestBody.addProperty("parent", normalizedResourceName);
+        requestBody.addProperty("tagValue", tagValue);
+        
+        // Submit the request to create the tag binding
+        JsonObject operation = httpClient.post(baseUrl, requestBody);
+        
+        // Wait for the operation to complete
+        if (operation.has("name")) {
+            String operationName = operation.get("name").getAsString();
+            waitForOperationCompletion(operationName);
+            
+            // Get the completed tag binding
+            return getTagBindingFromOperation(operation);
+        }
+        
+        return operation;
     }
     
     /**
      * Deletes an existing tag binding.
      *
      * @param tagBindingName The full name of the tag binding to delete
-     * @throws ApiException If the API call fails
+     * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
+     * @throws IOException If an I/O error occurs
      * @throws InterruptedException If the operation is interrupted
-     * @throws ExecutionException If the operation execution fails
-     * @throws TimeoutException If the operation times out
      */
-    public void deleteTagBinding(String tagBindingName) 
-            throws ApiException, InterruptedException, ExecutionException, TimeoutException {
+    public void deleteTagBinding(String tagBindingName, String location) 
+            throws IOException, InterruptedException {
         
         System.out.println("Deleting tag binding: " + tagBindingName);
         
-        // Create the request
-        DeleteTagBindingRequest request = DeleteTagBindingRequest.newBuilder()
-                .setName(tagBindingName)
-                .build();
+        // For compute resources, we need to use the zone not the region
+        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
+        String apiLocation = location;
+        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
+            // This is a zone, extract the region part for the API endpoint
+            apiLocation = location.substring(0, location.lastIndexOf('-'));
+            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
+        }
         
-        // Submit the request and wait for completion
-        tagBindingsClient.deleteTagBindingAsync(request)
-                .get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // API URL depends on whether we're using a global or regional resource
+        String baseUrl;
+        if (apiLocation != null && !apiLocation.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + apiLocation);
+            // For regional resources
+            baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/" + tagBindingName;
+        } else {
+            // For global resources
+            baseUrl = TAG_BINDINGS_API_URL + tagBindingName;
+        }
+        
+        System.out.println("Using API endpoint: " + baseUrl);
+        
+        // Submit the request to delete the tag binding
+        JsonObject operation = httpClient.delete(baseUrl);
+        
+        // Wait for the operation to complete
+        if (operation.has("name")) {
+            String operationName = operation.get("name").getAsString();
+            waitForOperationCompletion(operationName);
+        }
     }
     
     /**
      * Lists all tag bindings associated with a specific resource.
      *
      * @param resourceName The full resource name
-     * @return List of TagBinding objects associated with the resource
-     * @throws ApiException If the API call fails
+     * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
+     * @return List of tag bindings as JsonObjects
+     * @throws IOException If an I/O error occurs
      */
-    public List<TagBinding> listTagBindingsForResource(String resourceName) throws ApiException {
+    public List<JsonObject> listTagBindingsForResource(String resourceName, String location) 
+            throws IOException {
         System.out.println("Listing tag bindings for resource: " + resourceName);
         
-        // Create the request
-        ListTagBindingsRequest request = ListTagBindingsRequest.newBuilder()
-                .setParent(resourceName)
-                .build();
+        // Resource path might need to be modified to conform to One Platform resource name format
+        String normalizedResourceName = resourceName;
+        if (normalizedResourceName.contains("/compute/v1/")) {
+            normalizedResourceName = normalizedResourceName.replace("/compute/v1", "");
+            System.out.println("Using normalized resource name: " + normalizedResourceName);
+        }
         
-        // Collect all results
-        List<TagBinding> tagBindings = new ArrayList<>();
-        tagBindingsClient.listTagBindings(request).iterateAll().forEach(tagBindings::add);
+        Map<String, String> params = new HashMap<>();
+        params.put("parent", normalizedResourceName);
         
-        return tagBindings;
+        // For compute resources, we need to use the zone not the region
+        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
+        String apiLocation = location;
+        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
+            // This is a zone, extract the region part for the API endpoint
+            apiLocation = location.substring(0, location.lastIndexOf('-'));
+            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
+        }
+        
+        // API URL depends on whether we're using a global or regional resource
+        String baseUrl;
+        if (apiLocation != null && !apiLocation.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + apiLocation);
+            // For regional resources
+            baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
+        } else {
+            // For global resources
+            baseUrl = TAG_BINDINGS_API_URL + "tagBindings";
+        }
+        
+        String url = HttpClient.addQueryParams(baseUrl, params);
+        System.out.println("Using API endpoint: " + url);
+        
+        return executeListRequest(url);
     }
     
     /**
      * Lists all tag bindings associated with a specific tag value.
      *
      * @param tagValueName The full tag value name
-     * @return List of TagBinding objects associated with the tag value
-     * @throws ApiException If the API call fails
+     * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
+     * @return List of tag bindings as JsonObjects
+     * @throws IOException If an I/O error occurs
      */
-    public List<TagBinding> listTagBindingsForTagValue(String tagValueName) throws ApiException {
+    public List<JsonObject> listTagBindingsForTagValue(String tagValueName, String location) 
+            throws IOException {
         System.out.println("Listing tag bindings for tag value: " + tagValueName);
         
-        // Create the request with tagValue field
-        ListTagBindingsRequest request = ListTagBindingsRequest.newBuilder()
-                .setParent(tagValueName)
-                .build();
+        Map<String, String> params = new HashMap<>();
+        params.put("tagValue", tagValueName);
         
-        // Collect all results
-        List<TagBinding> tagBindings = new ArrayList<>();
-        tagBindingsClient.listTagBindings(request).iterateAll().forEach(tagBindings::add);
+        // For compute resources, we need to use the zone not the region
+        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
+        String apiLocation = location;
+        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
+            // This is a zone, extract the region part for the API endpoint
+            apiLocation = location.substring(0, location.lastIndexOf('-'));
+            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
+        }
         
-        return tagBindings;
+        // API URL depends on whether we're using a global or regional resource
+        String baseUrl;
+        if (apiLocation != null && !apiLocation.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + apiLocation);
+            // For regional resources
+            baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
+        } else {
+            // For global resources
+            baseUrl = TAG_BINDINGS_API_URL + "tagBindings";
+        }
+        
+        String url = HttpClient.addQueryParams(baseUrl, params);
+        System.out.println("Using API endpoint: " + url);
+        
+        return executeListRequest(url);
     }
     
     /**
-     * Closes the TagBindingsClient.
+     * Executes a list request and processes paginated results.
+     *
+     * @param url The URL to send the GET request to
+     * @return List of JsonObjects from all pages
+     * @throws IOException If an I/O error occurs
+     */
+    private List<JsonObject> executeListRequest(String url) throws IOException {
+        List<JsonObject> results = new ArrayList<>();
+        String nextPageUrl = url;
+        
+        while (nextPageUrl != null) {
+            JsonObject response = httpClient.get(nextPageUrl);
+            
+            if (response.has("tagBindings")) {
+                JsonArray bindings = response.getAsJsonArray("tagBindings");
+                bindings.forEach(item -> results.add(item.getAsJsonObject()));
+            }
+            
+            if (response.has("nextPageToken") && !response.get("nextPageToken").isJsonNull()) {
+                String pageToken = response.get("nextPageToken").getAsString();
+                Map<String, String> params = new HashMap<>();
+                params.put("pageToken", pageToken);
+                nextPageUrl = HttpClient.addQueryParams(url, params);
+            } else {
+                nextPageUrl = null;
+            }
+        }
+        
+        return results;
+    }
+    
+    /**
+     * Extracts the tag binding information from an operation.
+     *
+     * @param operation The operation containing tag binding information
+     * @return The tag binding as a JsonObject
+     */
+    private JsonObject getTagBindingFromOperation(JsonObject operation) {
+        if (operation.has("response") && operation.getAsJsonObject("response").has("name")) {
+            String tagBindingName = operation.getAsJsonObject("response").get("name").getAsString();
+            JsonObject tagBinding = new JsonObject();
+            tagBinding.addProperty("name", tagBindingName);
+            return tagBinding;
+        }
+        return operation;
+    }
+    
+    /**
+     * Waits for a long-running operation to complete.
+     *
+     * @param operationName The name of the operation to wait for
+     * @return The result of the operation as a JsonObject
+     * @throws IOException If an I/O error occurs
+     * @throws InterruptedException If the operation is interrupted
+     */
+    private JsonObject waitForOperationCompletion(String operationName) 
+            throws IOException, InterruptedException {
+        
+        // Determine if this is a regional operation based on the URL
+        String url;
+        if (operationName.contains("-cloudresourcemanager.googleapis.com")) {
+            // This is a regional operation, use the full URL
+            url = operationName;
+        } else {
+            // This is a global operation, use the base URL + operation name
+            url = TAG_BINDINGS_API_URL + operationName;
+        }
+        
+        System.out.println("Waiting for operation to complete: " + url);
+        
+        long startTime = System.currentTimeMillis();
+        long endTime = startTime + (OPERATION_TIMEOUT_SECONDS * 1000);
+        
+        while (System.currentTimeMillis() < endTime) {
+            JsonObject operation = httpClient.get(url);
+            
+            if (operation.has("done") && operation.get("done").getAsBoolean()) {
+                if (operation.has("error")) {
+                    throw new IOException("Operation failed: " + operation.get("error").toString());
+                }
+                
+                if (operation.has("response")) {
+                    return operation.getAsJsonObject("response");
+                }
+                
+                return operation;
+            }
+            
+            // Wait a bit before polling again
+            TimeUnit.SECONDS.sleep(2);
+        }
+        
+        throw new IOException("Operation did not complete within the timeout period: " + operationName);
+    }
+    
+    /**
+     * Closes any resources used by this class.
      */
     @Override
     public void close() {
-        if (tagBindingsClient != null) {
-            tagBindingsClient.close();
-        }
+        // No resources to close in this implementation
     }
 }
