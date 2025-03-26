@@ -60,15 +60,14 @@ public class GcpResourceTagger implements AutoCloseable {
             }
         }
         
-        // For compute resources, we need to use the zone not the region
-        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
-        String apiLocation = location;
-        
-        // API URL depends on whether we're using a global or regional resource
+        // API URL depends on whether we're using a global or location-specific resource
         String baseUrl;
-        if (apiLocation != null && !apiLocation.isEmpty()) {
+        if (location != null && !location.isEmpty()) {
+            // Extract region from zone if needed (for compatibility, but we'll use the original location for the URL)
+            String apiLocation = location;
+            
             System.out.println("Using location for API endpoint: " + apiLocation);
-            // For regional resources
+            // For location-specific resources
             baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
         } else {
             // For global resources
@@ -100,34 +99,84 @@ public class GcpResourceTagger implements AutoCloseable {
     /**
      * Deletes an existing tag binding.
      *
+     * @param resourceName The full resource name to unbind from the tag
+     * @param tagValue The tag value to unbind from the resource
+     * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
+     * @throws IOException If an I/O error occurs
+     * @throws InterruptedException If the operation is interrupted
+     */
+    public void deleteTagBinding(String resourceName, String tagValue, String location) 
+            throws IOException, InterruptedException {
+        
+        System.out.println("Deleting tag binding for resource: " + resourceName + " with tag value: " + tagValue);
+        
+        // Normalize resource name if needed
+        String normalizedResourceName = resourceName;
+        if (normalizedResourceName.contains("/compute/v1/")) {
+            normalizedResourceName = normalizedResourceName.replace("/compute/v1", "");
+            System.out.println("Using normalized resource name: " + normalizedResourceName);
+        }
+        
+        // URL-encode the resource name by replacing all "/" with "%2F"
+        String encodedResourceName = normalizedResourceName.replace("/", "%2F");
+        
+        // Format the tag binding name according to the required format:
+        // tagBindings/{encoded-resource-name}/{tag-value-name}
+        String formattedTagBindingName = "tagBindings/" + encodedResourceName + "/" + tagValue;
+        System.out.println("Formatted tag binding name: " + formattedTagBindingName);
+        
+        // API URL depends on whether we're using a global or location-specific resource
+        String baseUrl;
+        if (location != null && !location.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + location);
+            // For location-specific resources
+            baseUrl = "https://" + location + "-cloudresourcemanager.googleapis.com/v3/" + formattedTagBindingName;
+        } else {
+            // For global resources
+            baseUrl = TAG_BINDINGS_API_URL + formattedTagBindingName;
+        }
+        
+        System.out.println("Using API endpoint: " + baseUrl);
+        
+        // Submit the request to delete the tag binding
+        JsonObject operation = httpClient.delete(baseUrl);
+        
+        // Wait for the operation to complete
+        if (operation.has("name")) {
+            String operationName = operation.get("name").getAsString();
+            waitForOperationCompletion(operationName);
+        }
+    }
+    
+    /**
+     * Deletes an existing tag binding using the full tag binding name.
+     *
      * @param tagBindingName The full name of the tag binding to delete
      * @param location Optional location parameter (e.g., "us-central1-a" for a zone)
      * @throws IOException If an I/O error occurs
      * @throws InterruptedException If the operation is interrupted
      */
-    public void deleteTagBinding(String tagBindingName, String location) 
+    public void deleteTagBindingByName(String tagBindingName, String location) 
             throws IOException, InterruptedException {
         
-        System.out.println("Deleting tag binding: " + tagBindingName);
+        System.out.println("Deleting tag binding by name: " + tagBindingName);
         
-        // For compute resources, we need to use the zone not the region
-        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
-        String apiLocation = location;
-        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
-            // This is a zone, extract the region part for the API endpoint
-            apiLocation = location.substring(0, location.lastIndexOf('-'));
-            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
+        // The tag binding name passed as a parameter should be the full name including "tagBindings/"
+        String formattedTagBindingName = tagBindingName;
+        if (!formattedTagBindingName.startsWith("tagBindings/")) {
+            formattedTagBindingName = "tagBindings/" + formattedTagBindingName;
+            System.out.println("Formatted tag binding name: " + formattedTagBindingName);
         }
         
-        // API URL depends on whether we're using a global or regional resource
+        // API URL depends on whether we're using a global or location-specific resource
         String baseUrl;
-        if (apiLocation != null && !apiLocation.isEmpty()) {
-            System.out.println("Using location for API endpoint: " + apiLocation);
-            // For regional resources
-            baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/" + tagBindingName;
+        if (location != null && !location.isEmpty()) {
+            System.out.println("Using location for API endpoint: " + location);
+            // For location-specific resources
+            baseUrl = "https://" + location + "-cloudresourcemanager.googleapis.com/v3/" + formattedTagBindingName;
         } else {
             // For global resources
-            baseUrl = TAG_BINDINGS_API_URL + tagBindingName;
+            baseUrl = TAG_BINDINGS_API_URL + formattedTagBindingName;
         }
         
         System.out.println("Using API endpoint: " + baseUrl);
@@ -164,20 +213,14 @@ public class GcpResourceTagger implements AutoCloseable {
         Map<String, String> params = new HashMap<>();
         params.put("parent", normalizedResourceName);
         
-        // For compute resources, we need to use the zone not the region
-        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
-        String apiLocation = location;
-        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
-            // This is a zone, extract the region part for the API endpoint
-            apiLocation = location.substring(0, location.lastIndexOf('-'));
-            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
-        }
-        
-        // API URL depends on whether we're using a global or regional resource
+        // API URL depends on whether we're using a global or location-specific resource
         String baseUrl;
-        if (apiLocation != null && !apiLocation.isEmpty()) {
+        if (location != null && !location.isEmpty()) {
+            // Extract region from zone if needed (for compatibility, but we'll use the original location for the URL)
+            String apiLocation = location;
+            
             System.out.println("Using location for API endpoint: " + apiLocation);
-            // For regional resources
+            // For location-specific resources
             baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
         } else {
             // For global resources
@@ -205,20 +248,14 @@ public class GcpResourceTagger implements AutoCloseable {
         Map<String, String> params = new HashMap<>();
         params.put("tagValue", tagValueName);
         
-        // For compute resources, we need to use the zone not the region
-        // Extract region from zone if a zone is provided (e.g., "us-central1-a" -> "us-central1")
-        String apiLocation = location;
-        if (location != null && !location.isEmpty() && location.matches(".*-[a-z]$")) {
-            // This is a zone, extract the region part for the API endpoint
-            apiLocation = location.substring(0, location.lastIndexOf('-'));
-            System.out.println("Extracted region '" + apiLocation + "' from zone '" + location + "' for API endpoint");
-        }
-        
-        // API URL depends on whether we're using a global or regional resource
+        // API URL depends on whether we're using a global or location-specific resource
         String baseUrl;
-        if (apiLocation != null && !apiLocation.isEmpty()) {
+        if (location != null && !location.isEmpty()) {
+            // Extract region from zone if needed (for compatibility, but we'll use the original location for the URL)
+            String apiLocation = location;
+            
             System.out.println("Using location for API endpoint: " + apiLocation);
-            // For regional resources
+            // For location-specific resources
             baseUrl = "https://" + apiLocation + "-cloudresourcemanager.googleapis.com/v3/tagBindings";
         } else {
             // For global resources
@@ -295,12 +332,12 @@ public class GcpResourceTagger implements AutoCloseable {
         if (operationName.contains("-cloudresourcemanager.googleapis.com")) {
             // This is a regional operation, use the full URL
             url = operationName;
+            System.out.println("Waiting for regional operation to complete: " + url);
         } else {
             // This is a global operation, use the base URL + operation name
             url = TAG_BINDINGS_API_URL + operationName;
+            System.out.println("Waiting for global operation to complete: " + url);
         }
-        
-        System.out.println("Waiting for operation to complete: " + url);
         
         long startTime = System.currentTimeMillis();
         long endTime = startTime + (OPERATION_TIMEOUT_SECONDS * 1000);
@@ -309,6 +346,8 @@ public class GcpResourceTagger implements AutoCloseable {
             JsonObject operation = httpClient.get(url);
             
             if (operation.has("done") && operation.get("done").getAsBoolean()) {
+                System.out.println("Operation completed successfully");
+                
                 if (operation.has("error")) {
                     throw new IOException("Operation failed: " + operation.get("error").toString());
                 }
@@ -321,10 +360,12 @@ public class GcpResourceTagger implements AutoCloseable {
             }
             
             // Wait a bit before polling again
+            System.out.println("Operation still in progress, waiting...");
             TimeUnit.SECONDS.sleep(2);
         }
         
-        throw new IOException("Operation did not complete within the timeout period: " + operationName);
+        throw new IOException("Operation did not complete within the timeout period of " + 
+                               OPERATION_TIMEOUT_SECONDS + " seconds: " + operationName);
     }
     
     /**

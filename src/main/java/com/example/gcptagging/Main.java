@@ -28,21 +28,25 @@ public class Main {
         System.out.println("\nCommands:");
         System.out.println("  create <service-account-file> <resource-name> <tag-value> [location]");
         System.out.println("    - Creates a tag binding for a resource with optional location parameter");
-        System.out.println("  delete <service-account-file> <tag-binding-name> [location]");
-        System.out.println("    - Deletes a tag binding with optional location parameter");
+        System.out.println("  delete <service-account-file> <resource-name> <tag-value> [location]");
+        System.out.println("    - Deletes a tag binding for a resource with optional location parameter");
+        System.out.println("  delete-by-name <service-account-file> <tag-binding-name> [location]");
+        System.out.println("    - Deletes a tag binding using its full name with optional location parameter");
         System.out.println("  list-resource <service-account-file> <resource-name> [location]");
         System.out.println("    - Lists all tag bindings for a resource with optional location parameter");
         System.out.println("  list-tag <service-account-file> <tag-value> [location]");
         System.out.println("    - Lists all tag bindings for a tag value with optional location parameter");
         System.out.println("\nExamples:");
-        System.out.println("  Create a tag binding for a Compute Engine instance (regional resource):");
-        System.out.println("    java -jar gcptagging.jar create service-account.json //compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-vm tagValues/123456789 us-central1");
+        System.out.println("  Create a tag binding for a Compute Engine instance (zonal resource):");
+        System.out.println("    java -jar gcptagging.jar create service-account.json //compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-vm tagValues/123456789 us-central1-a");
         System.out.println("  Create a tag binding for a project (global resource):");
         System.out.println("    java -jar gcptagging.jar create service-account.json //cloudresourcemanager.googleapis.com/projects/my-project tagValues/123456789");
-        System.out.println("  Delete a tag binding:");
-        System.out.println("    java -jar gcptagging.jar delete service-account.json tagBindings/compute.googleapis.com@projects@my-project@zones@us-central1-a@instances@my-vm@tagValues@123456789 us-central1");
+        System.out.println("  Delete a tag binding for a Compute Engine instance:");
+        System.out.println("    java -jar gcptagging.jar delete service-account.json //compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-vm tagValues/123456789 us-central1-a");
+        System.out.println("  Delete a tag binding using its full name:");
+        System.out.println("    java -jar gcptagging.jar delete-by-name service-account.json tagBindings/compute.googleapis.com@projects@my-project@zones@us-central1-a@instances@my-vm@tagValues@123456789 us-central1-a");
         System.out.println("  List tag bindings for a resource:");
-        System.out.println("    java -jar gcptagging.jar list-resource service-account.json //compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-vm us-central1");
+        System.out.println("    java -jar gcptagging.jar list-resource service-account.json //compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/my-vm us-central1-a");
         System.out.println("  List tag bindings for a tag value:");
         System.out.println("    java -jar gcptagging.jar list-tag service-account.json tagValues/123456789");
     }
@@ -102,8 +106,23 @@ public class Main {
                     break;
                     
                 case "delete":
-                    if (args.length < 3) {
+                    if (args.length < 4) {
                         System.err.println("Error: Missing arguments for delete command");
+                        printUsage();
+                        System.exit(1);
+                    }
+                    resourceName = args[2];
+                    tagValue = args[3];
+                    // Optional location parameter
+                    location = (args.length > 4) ? args[4] : null;
+                    
+                    tagger.deleteTagBinding(resourceName, tagValue, location);
+                    System.out.println("Successfully deleted tag binding for resource: " + resourceName + " and tag value: " + tagValue);
+                    break;
+                    
+                case "delete-by-name":
+                    if (args.length < 3) {
+                        System.err.println("Error: Missing arguments for delete-by-name command");
                         printUsage();
                         System.exit(1);
                     }
@@ -111,7 +130,7 @@ public class Main {
                     // Optional location parameter
                     location = (args.length > 3) ? args[3] : null;
                     
-                    tagger.deleteTagBinding(tagBindingName, location);
+                    tagger.deleteTagBindingByName(tagBindingName, location);
                     System.out.println("Successfully deleted tag binding: " + tagBindingName);
                     break;
                     
